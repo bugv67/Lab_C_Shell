@@ -180,10 +180,6 @@ void handlePipes(cmdLine *pCmdLine)
 {
     // wanted lines are chained in arg
     // need do ass support in difreent inputs or outputs
-
-    char *cmd1[] = {"ps", "-xl", NULL};
-    char *cmd2[] = {"grep", "5", NULL};
-
     int pipefd[2];          // opening line
     if (pipe(pipefd) == -1) // stage 1- creating a pipe
     {
@@ -196,7 +192,7 @@ void handlePipes(cmdLine *pCmdLine)
     if (child1 == -1)
     {
         perror("fork failed");
-        return 1;
+        return;
     }
     // child=0 , parent>0
     if (child1 == 0)
@@ -227,7 +223,7 @@ void handlePipes(cmdLine *pCmdLine)
         dup(pipefd[1]);   // stage 3.2 - duplicating the write end of the pipe to stdout
         close(pipefd[1]); // stage 3.3- closing write end after dup
 
-        fprintf(stderr, "(child1>going to execute cmd: %s %s)\n", cmd1[0], cmd1[1]);
+        fprintf(stderr, "(child1>going to execute cmd: %s %s)\n", pCmdLine->arguments[0], pCmdLine->arguments);
         execvp(pCmdLine->arguments[0], pCmdLine->arguments); // stage 3.4 - execut  cmd1 and disappiring from the process
         exit(1);
     }
@@ -240,7 +236,7 @@ void handlePipes(cmdLine *pCmdLine)
     if (child2 == -1)
     {
         perror("fork failed");
-        return 1;
+        return;
     }
     if (child2 == 0)
     { //  no input redirect - getting from the pipe
@@ -270,8 +266,8 @@ void handlePipes(cmdLine *pCmdLine)
         dup(pipefd[0]);   // stage 6.2- duplicating the read end of the pipe to stdin
         close(pipefd[0]); // stage 6.3- closing read end after dup
 
-        fprintf(stderr, "(child2>going to execute cmd: %s %s)\n", cmd2[0], cmd2[1]);
-        execvp(cmd2[0], cmd2); // stage 6.4- execut cmd2
+        fprintf(stderr, "(child2>going to execute cmd: %s %s)\n", pCmdLine->next->arguments[0], pCmdLine->next->arguments);
+        execvp(pCmdLine->next->arguments[0], pCmdLine->next->arguments); // stage 6.4- execut cmd2
         exit(1);
     }
 

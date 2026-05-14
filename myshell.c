@@ -23,8 +23,25 @@ void printDebug(int pid, cmdLine *pCmdLine)
         fprintf(stderr, "Foreground/Background: Background\n");
     }
 }
+
 void execute(cmdLine *pCmdLine)
 {
+    if (pCmdLine->next != NULL)
+    {
+        // handeling errors
+        if (pCmdLine->outputRedirect != NULL)
+        {
+            fprintf(stderr, "Error: left side of pipe cannot redirect output\n");
+            return;
+        }
+        if (pCmdLine->next->inputRedirect != NULL)
+        {
+            fprintf(stderr, "Error: right side of pipe cannot redirect input\n");
+            return;
+        }
+        handlePipes(pCmdLine);
+        return;
+    }
 
     if (strcmp(pCmdLine->arguments[0], "cd") == 0)
     {
@@ -141,7 +158,7 @@ void execute(cmdLine *pCmdLine)
             close(fd_out);
         }
 
-        // running the executa
+        // running the executa !!! a regular command with no pipes !!
         if (execvp(pCmdLine->arguments[0], pCmdLine->arguments))
         { // search for the excute in the system's PATH
             perror("execv error");
@@ -159,8 +176,119 @@ void execute(cmdLine *pCmdLine)
     }
 }
 
+void handlePipes(cmdLine *pCmdLine)
+{
+    // wanted lines are chained in arg
+    // need do ass support in difreent inputs or outputs
+
+    char *cmd1[] = {"ps", "-xl", NULL};
+    char *cmd2[] = {"grep", "5", NULL};
+
+    int pipefd[2];          // opening line
+    if (pipe(pipefd) == -1) // stage 1- creating a pipe
+    {
+        perror("pipe failed");
+        return 1;
+    }
+    int child1, child2;
+
+    child1 = fork(); // stage 2- forking the first child process
+    if (child1 == -1)
+    {
+        perror("fork failed");
+        return 1;
+    }
+    // child=0 , parent>0
+    if (child1 == 0)
+    {
+        // check for redirecting in outpur or input
+        //  input redirection
+        if (pCmdLine->inputRedirect != NULL)
+        {
+            int fd_in = open(pCmdLine->inputRedirect, O_RDONLY);
+            if (fd_in == -1)
+            {
+                perror("failed to open input file");
+                _exit(1);
+            }
+            if (dup2(fd_in, STDIN_FILENO) == -1)
+            {
+                perror("dup2 input failed");
+                _exit(1);
+            }
+            close(fd_in);
+        } // no output redirect because going to the pipe directly
+
+        fprintf(stderr, "(child1>redirecting stdout to the write end of the pipe...)\n");
+        // child 1
+        close(STDOUT_FILENO); // stage 3.1 -closing stdout
+        close(pipefd[0]);     // closing read end
+
+        dup(pipefd[1]);   // stage 3.2 - duplicating the write end of the pipe to stdout
+        close(pipefd[1]); // stage 3.3- closing write end after dup
+
+        fprintf(stderr, "(child1>going to execute cmd: %s %s)\n", cmd1[0], cmd1[1]);
+        execvp(pCmdLine->arguments[0], pCmdLine->arguments); // stage 3.4 - execut  cmd1 and disappiring from the process
+        exit(1);
+    }
+
+    fprintf(stderr, "(parent_process>closing the write end of the pipe...)\n");
+    close(pipefd[1]); // stage 4
+
+    fprintf(stderr, "(parent_process>forking...)\n");
+    child2 = fork(); // stage 5- forking the second child process
+    if (child2 == -1)
+    {
+        perror("fork failed");
+        return 1;
+    }
+    if (child2 == 0)
+    { //  no input redirect - getting from the pipe
+
+        // output redirction
+        if (pCmdLine->next->outputRedirect != NULL)
+        {
+
+            int fd_out = open(pCmdLine->next->outputRedirect, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (fd_out == -1)
+            {
+                perror("failed to open output file");
+                _exit(1);
+            }
+            if (dup2(fd_out, STDOUT_FILENO) == -1)
+            {
+                perror("dup2 output failed");
+                _exit(1);
+            }
+            close(fd_out);
+        }
+        fprintf(stderr, "(child2>redirecting stdin to the read end of the pipe...)\n");
+        // child 2
+        close(STDIN_FILENO); // stage 6.1-closing stdin
+        close(pipefd[1]);    // closing write end
+
+        dup(pipefd[0]);   // stage 6.2- duplicating the read end of the pipe to stdin
+        close(pipefd[0]); // stage 6.3- closing read end after dup
+
+        fprintf(stderr, "(child2>going to execute cmd: %s %s)\n", cmd2[0], cmd2[1]);
+        execvp(cmd2[0], cmd2); // stage 6.4- execut cmd2
+        exit(1);
+    }
+
+    fprintf(stderr, "(parent_process>closing the read end of the pipe...)\n");
+    close(pipefd[0]); // stage 7
+
+    // stage 8
+    fprintf(stderr, "(parent_process>waiting for child processes to terminate...)\n");
+    waitpid(child1, NULL, 0); // stage 8
+    waitpid(child2, NULL, 0);
+
+    fprintf(stderr, "(parent_process>exiting...)\n");
+}
+
 int main(int argc, char **argv)
 {
+    // need to update in order to hnadle pipes - in excute
     while (1)
     {
         char path[PATH_MAX];

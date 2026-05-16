@@ -1,3 +1,4 @@
+#define _XOPEN_SOURCE 700
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,8 +8,132 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <bits/waitflags.h>
 
-int debug = 0; // 0 - no debug, 1 - debug mode on
+#define TERMINATED -1
+#define RUNNING 1
+#define SUSPENDED 0
+typedef struct process
+{
+    cmdLine *cmd;         // the parsed command line
+    pid_t pid;            // the process id that is running the command
+    int status;           // status of the process: RUNNING 1 /SUSPENDED 0 /TERMINATED -2
+    struct process *next; // next process in chain
+} process;
+
+process *process_list = NULL; // rember to free!
+int debug = 0;                // 0 - no debug, 1 - debug mode on
+
+void addProcess(process **process_list, cmdLine *cmd, pid_t pid)
+{
+    process *new_node = (process *)malloc(sizeof(process));
+    if (new_node == NULL)
+    {
+        perror("malloc failed");
+        return;
+    }
+
+    new_node->cmd = cmd;
+    new_node->pid = pid;
+    new_node->status = RUNNING;
+
+    new_node->next = *process_list;
+    *process_list = new_node;
+}
+
+void printProcessList(process **process_list)
+{
+    printf("PID\t\tSTATUS\t\tCommand\n");
+
+    process *curr = *process_list;
+    while (curr != NULL)
+    {
+        // getting status
+        char *status_str = "Unknown";
+        if (curr->status == TERMINATED)
+            status_str = "Terminated";
+        else if (curr->status == RUNNING)
+            status_str = "Running";
+        else if (curr->status == SUSPENDED)
+            status_str = "Suspended";
+
+        // printing pid and status
+        printf("%d\t\t%s\t\t", curr->pid, status_str);
+
+        // printing command
+        for (int i = 0; i < curr->cmd->argCount; i++)
+        {
+            printf("%s ", curr->cmd->arguments[i]);
+        }
+        printf("\n");
+
+        // next process
+        curr = curr->next;
+    }
+}
+
+void updateProcessStatus(process *process_list, int pid, int status)
+{
+    process *curr = process_list;
+    while (curr != NULL)
+    {
+        if (curr->pid == pid) // found the process
+        {
+            curr->status = status;
+            return;
+        }
+        curr = curr->next;
+    }
+}
+
+void updateProcessList(process **process_list)
+{
+    process *curr = *process_list;
+    while (curr != NULL)
+    {
+        int status;
+        // בודקים מה מצב הילד מבלי להיתקע. משלבים את הדגלים עם פעולת OR |
+        int res = waitpid(curr->pid, &status, WNOHANG | WUNTRACED | WCONTINUED);
+
+        if (res > 0)
+        {                                                 // התהליך שינה סטטוס!
+            if (WIFEXITED(status) || WIFSIGNALED(status)) // child terminated normally or by signal
+            {
+                updateProcessStatus(*process_list, curr->pid, TERMINATED);
+            }
+            else if (WIFSTOPPED(status)) // child stopped
+            {
+                updateProcessStatus(*process_list, curr->pid, SUSPENDED);
+            }
+            else if (WIFCONTINUED(status)) // child waked up
+            {
+                updateProcessStatus(*process_list, curr->pid, RUNNING);
+            }
+        }
+        else if (res == -1) // error / bot found
+        {
+            updateProcessStatus(*process_list, curr->pid, TERMINATED);
+        }
+        curr = curr->next;
+    }
+}
+
+void freeProcessList(process *process_list)
+{
+    process *curr = process_list;
+    while (curr != NULL)
+    {
+        process *temp = curr;
+        curr = curr->next;
+
+        if (temp->cmd != NULL) // fee the cmdine
+        {
+            freeCmdLines(temp->cmd);
+        }
+        free(temp); // free the node
+    }
+}
+
 void printDebug(int pid, cmdLine *pCmdLine)
 {
     fprintf(stderr, "PID: %d\n", pid);
@@ -114,6 +239,11 @@ void execute(cmdLine *pCmdLine)
         printf("Nuked process with PID %d and all its children\n", target_pid);
         return;
     }
+    else if (strcmp(pCmdLine->arguments[0], "procs") == 0) // C1
+    {
+        printProcessList(&process_list);
+        return;
+    }
 
     int pid = fork();
     if (pid == -1)
@@ -122,7 +252,7 @@ void execute(cmdLine *pCmdLine)
         return;
     }
     if (pid == 0)
-    {
+    { // child processs
         // input redirection
         if (pCmdLine->inputRedirect != NULL)
         {
@@ -169,6 +299,8 @@ void execute(cmdLine *pCmdLine)
     else
     { // parent process
         printDebug(pid, pCmdLine);
+        addProcess(&process_list, pCmdLine, pid); // adding the process to the list
+
         if (pCmdLine->blocking)
         {
             waitpid(pid, NULL, 0);
@@ -314,7 +446,7 @@ int main(int argc, char **argv)
             continue;
         }
         execute(cmd); // execute the command
-        freeCmdLines(cmd);
+        // freeCmdLines(cmd);   // the line is in list
     }
     return 0;
 }

@@ -560,17 +560,17 @@ int main(int argc, char **argv)
             continue;
         }
         execute(cmd); // execute the command
-        // freeCmdLines(cmd);   // the line is in list
-        freeProcessList(process_list);
-
-        // deleting the history!
-        int count_to_free = (history_count < HISTLEN) ? history_count : HISTLEN;
-        int curr = oldest_idx;
-        for (int i = 0; i < count_to_free; i++)
-        {
-            free(history[curr].command);
-            curr = (curr + 1) % HISTLEN;
-        }
     }
+    // freeCmdLines(cmd);   // the line is in list
+    freeProcessList(process_list);
+    // deleting the history!
+    int count_to_free = (history_count < HISTLEN) ? history_count : HISTLEN;
+    int curr = oldest_idx;
+    for (int i = 0; i < count_to_free; i++)
+    {
+        free(history[curr].command);
+        curr = (curr + 1) % HISTLEN;
+    }
+
     return 0;
 }

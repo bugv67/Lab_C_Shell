@@ -192,6 +192,7 @@ void execute(cmdLine *pCmdLine)
             perror("stop failed");
         }
         printf("Stopped process with PID %d\n", target_pid);
+        updateProcessStatus(process_list, target_pid, SUSPENDED);
         return;
     }
     else if (strcmp(pCmdLine->arguments[0], "wakeup") == 0)
@@ -207,6 +208,7 @@ void execute(cmdLine *pCmdLine)
             perror("wakeup failed");
         }
         printf("Woke up process with PID %d\n", target_pid);
+        updateProcessStatus(process_list, target_pid, RUNNING);
         return;
     }
     else if (strcmp(pCmdLine->arguments[0], "ice") == 0)
@@ -222,6 +224,7 @@ void execute(cmdLine *pCmdLine)
             perror("ice failed");
         }
         printf("Iced process with PID %d\n", target_pid);
+        updateProcessStatus(process_list, target_pid, TERMINATED);
         return;
     }
     else if (strcmp(pCmdLine->arguments[0], "nuke") == 0)
@@ -237,6 +240,7 @@ void execute(cmdLine *pCmdLine)
             perror("nuke failed");
         }
         printf("Nuked process with PID %d and all its children\n", target_pid);
+        updateProcessStatus(process_list, target_pid, TERMINATED);
         return;
     }
     else if (strcmp(pCmdLine->arguments[0], "procs") == 0) // C1

@@ -500,10 +500,50 @@ int main(int argc, char **argv)
             perror("fgets error");
             return 1;
         }
+        if (input[0] == '!')
+        {
+            if (input[1] == '!') // המשתמש הקליד !!
+            {
+                if (history_count == 0)
+                {
+                    fprintf(stderr, "Error: History is empty\n");
+                    continue;
+                }
+                // שולפים את הפקודה האחרונה (צריך ללכת צעד אחד אחורה מ-newest_idx במעגל)
+                int last_idx = (newest_idx - 1 + HISTLEN) % HISTLEN;
+                strcpy(input, history[last_idx].command); // דורסים את ה-"!!" עם הפקודה האמיתית
+            }
+            else // המשתמש הקליד !n (למשל !3)
+            {
+                int target_n = atoi(&input[1]); // מתרגמים את המספר שאחרי ה-!
+                int found = 0;
+                int curr = oldest_idx;
+                int count_to_check = (history_count < HISTLEN) ? history_count : HISTLEN;
+
+                // מחפשים את המספר בתור שלנו
+                for (int i = 0; i < count_to_check; i++)
+                {
+                    if (history[curr].cmd_num == target_n)
+                    {
+                        strcpy(input, history[curr].command); // מצאנו! מעתיקים
+                        found = 1;
+                        break;
+                    }
+                    curr = (curr + 1) % HISTLEN;
+                }
+
+                if (!found)
+                {
+                    fprintf(stderr, "Error: History index out of range\n");
+                    continue; // מתעלמים ומבקשים קלט חדש
+                }
+            }
+        }
         if (strncmp(input, "quit", 4) == 0)
         {
             break;
         }
+        addToHistory(input);
         if (strstr(input, "-d") != NULL)
         { // need to turn on debug mode
             debug = 1;
@@ -513,9 +553,24 @@ int main(int argc, char **argv)
         {
             continue;
         }
+        if (strcmp(cmd->arguments[0], "history") == 0)
+        {
+            printHistory();
+            freeCmdLines(cmd); // משחררים את cmd כי אנחנו לא שולחים אותו ל-execute
+            continue;
+        }
         execute(cmd); // execute the command
         // freeCmdLines(cmd);   // the line is in list
         freeProcessList(process_list);
+
+        // deleting the history!
+        int count_to_free = (history_count < HISTLEN) ? history_count : HISTLEN;
+        int curr = oldest_idx;
+        for (int i = 0; i < count_to_free; i++)
+        {
+            free(history[curr].command);
+            curr = (curr + 1) % HISTLEN;
+        }
     }
     return 0;
 }

@@ -43,12 +43,16 @@ void addProcess(process **process_list, cmdLine *cmd, pid_t pid)
 
 void printProcessList(process **process_list)
 {
+    updateProcessList(process_list);
+
     printf("PID\t\tSTATUS\t\tCommand\n");
 
     process *curr = *process_list;
+    process *prev = NULL; // keeping track of the previous node in order to remove the terminated processes from the list
+
     while (curr != NULL)
     {
-        // getting status
+        // getting the statu
         char *status_str = "Unknown";
         if (curr->status == TERMINATED)
             status_str = "Terminated";
@@ -57,18 +61,36 @@ void printProcessList(process **process_list)
         else if (curr->status == SUSPENDED)
             status_str = "Suspended";
 
-        // printing pid and status
+        // printing info about the process
         printf("%d\t\t%s\t\t", curr->pid, status_str);
-
-        // printing command
         for (int i = 0; i < curr->cmd->argCount; i++)
         {
             printf("%s ", curr->cmd->arguments[i]);
         }
         printf("\n");
 
-        // next process
-        curr = curr->next;
+        // need to remove the terminated processes from the list
+        process *next_node = curr->next;
+
+        if (curr->status == TERMINATED)
+        {
+            if (prev == NULL) // last process in the list
+            {
+                *process_list = next_node;
+            }
+            else
+            {
+                prev->next = next_node;
+            }
+
+            freeCmdLines(curr->cmd);
+            free(curr);
+        }
+        else
+        {
+            prev = curr;
+        }
+        curr = next_node;
     }
 }
 
@@ -325,6 +347,7 @@ void handlePipes(cmdLine *pCmdLine)
     int child1, child2;
 
     child1 = fork(); // stage 2- forking the first child process
+    addProcess(&process_list, pCmdLine, child1);
     if (child1 == -1)
     {
         perror("fork failed");
@@ -359,7 +382,7 @@ void handlePipes(cmdLine *pCmdLine)
         dup(pipefd[1]);   // stage 3.2 - duplicating the write end of the pipe to stdout
         close(pipefd[1]); // stage 3.3- closing write end after dup
 
-        fprintf(stderr, "(child1>going to execute cmd: %s %s)\n", pCmdLine->arguments[0], pCmdLine->arguments);
+        fprintf(stderr, "(child1>going to execute cmd: %s)\n", pCmdLine->arguments[0], pCmdLine->arguments);
         execvp(pCmdLine->arguments[0], pCmdLine->arguments); // stage 3.4 - execut  cmd1 and disappiring from the process
         exit(1);
     }
@@ -369,6 +392,7 @@ void handlePipes(cmdLine *pCmdLine)
 
     fprintf(stderr, "(parent_process>forking...)\n");
     child2 = fork(); // stage 5- forking the second child process
+    ddProcess(&process_list, pCmdLine, child2);
     if (child2 == -1)
     {
         perror("fork failed");
@@ -402,7 +426,7 @@ void handlePipes(cmdLine *pCmdLine)
         dup(pipefd[0]);   // stage 6.2- duplicating the read end of the pipe to stdin
         close(pipefd[0]); // stage 6.3- closing read end after dup
 
-        fprintf(stderr, "(child2>going to execute cmd: %s %s)\n", pCmdLine->next->arguments[0], pCmdLine->next->arguments);
+        fprintf(stderr, "(child2>going to execute cmd: %s)\n", pCmdLine->next->arguments[0], pCmdLine->next->arguments);
         execvp(pCmdLine->next->arguments[0], pCmdLine->next->arguments); // stage 6.4- execut cmd2
         exit(1);
     }
@@ -451,6 +475,7 @@ int main(int argc, char **argv)
         }
         execute(cmd); // execute the command
         // freeCmdLines(cmd);   // the line is in list
+        freeProcessList(process_list);
     }
     return 0;
 }

@@ -13,6 +13,7 @@
 #define TERMINATED -1
 #define RUNNING 1
 #define SUSPENDED 0
+#define HISTLEN 10
 typedef struct process
 {
     cmdLine *cmd;         // the parsed command line
@@ -20,9 +21,18 @@ typedef struct process
     int status;           // status of the process: RUNNING 1 /SUSPENDED 0 /TERMINATED -2
     struct process *next; // next process in chain
 } process;
+typedef struct
+{
+    int cmd_num;   // מספר הפקודה (1, 2, 3...)
+    char *command; // העתק של המחרוזת שהוקלדה
+} HistoryEntry;
 
-process *process_list = NULL; // rember to free!
-int debug = 0;                // 0 - no debug, 1 - debug mode on
+process *process_list = NULL;  // rember to free!
+HistoryEntry history[HISTLEN]; // array to hold histy - 10 entries
+int history_count = 0;
+int oldest_idx = 0; // index of the oldest entry
+int newest_idx = 0;
+int debug = 0; // 0 - no debug, 1 - debug mode on
 
 void addProcess(process **process_list, cmdLine *cmd, pid_t pid)
 {
@@ -440,6 +450,36 @@ void handlePipes(cmdLine *pCmdLine)
     waitpid(child2, NULL, 0);
 
     fprintf(stderr, "(parent_process>exiting...)\n");
+}
+
+void addToHistory(const char *input)
+{
+    if (history_count >= HISTLEN) // full? need to make space
+    {
+        free(history[oldest_idx].command);       // משחררים את המחרוזת הישנה
+        oldest_idx = (oldest_idx + 1) % HISTLEN; // מקדמים את אינדקס ההתחלה במעגל
+    }
+
+    // insert the new command
+    history[newest_idx].command = strdup(input);
+    history_count++;
+    history[newest_idx].cmd_num = history_count;
+
+    // updating the index of the newest command
+    newest_idx = (newest_idx + 1) % HISTLEN;
+}
+
+void printHistory()
+{
+    int curr = oldest_idx;
+
+    int count_to_print = (history_count < HISTLEN) ? history_count : HISTLEN;
+
+    for (int i = 0; i < count_to_print; i++)
+    {
+        printf("%d %s", history[curr].cmd_num, history[curr].command);
+        curr = (curr + 1) % HISTLEN; // moving to the next command in a circular manner
+    }
 }
 
 int main(int argc, char **argv)
